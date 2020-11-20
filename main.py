@@ -8,24 +8,26 @@ from fastavro import reader as avro_reader
 import tarfile
 
 
-def inside_tar_worker(lock, tar_file_name):
+def inside_tar_worker(lck, tar_file_name):
     with worker_number.get_lock():
         worker_number.value += 1
     with open(tar_file_name, 'rb') as fo:
         avro_io = avro_reader(fo)
         counter = 0
         for record in avro_io:
-            if counter % buffer_max == 0:
-                if counter != 0:
-                    with all_counter.get_lock():
-                        all_counter.value += buffer_max
-                sys.stdout.write(
-                    "\r extracting %s: %d... [worker number: %d]" % (
-                        tar_file_name, all_counter.value, worker_number.value))
-                sys.stdout.flush()
-            dao.insert_data(record, lock)
-            counter += 1
-        dao.flush(lock)
+            if record['response_type'] == 'AAAA' or record['response_type'] == 'A' or record[
+                'response_type'] == 'CNAME':
+                if counter % buffer_max == 0:
+                    if counter != 0:
+                        with all_counter.get_lock():
+                            all_counter.value += buffer_max
+                    sys.stdout.write(
+                        "\r extracting %s: %d... [worker number: %d]" % (
+                            tar_file_name, all_counter.value, worker_number.value))
+                    sys.stdout.flush()
+                dao.insert_data(record, lck)
+                counter += 1
+        dao.flush(lck)
         with all_counter.get_lock():
             all_counter.value += (counter % buffer_max)
         print(
