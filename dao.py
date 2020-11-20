@@ -1,4 +1,3 @@
-import os
 import sqlite3
 import pandas as pd
 
@@ -50,10 +49,10 @@ class Dao:
     Dao(Data Access Object): is a class for saving the records of the avro to the sqlite3
     """
 
-    def __init__(self, db_name, table_name, table_tuple, buffer_max):
+    def __init__(self, db_name, table_name, table_tuple, buffer_max=100):
         self.table_name = table_name
         self.table_tuple = table_tuple
-        conn = sqlite3.connect(db_name, isolation_level='EXCLUSIVE')
+        conn = sqlite3.connect(db_name)
         self._conn = conn
         cursor = conn.cursor()
         self._c = cursor
@@ -69,9 +68,9 @@ class Dao:
     @classmethod
     def load_table(cls, db_name, table_name, buffer_max=100):
         if table_name == 'Alexa':
-            return cls(db_name, table_name, alexa_table_tuple, buffer_max)
+            return cls(db_name, table_name, alexa_table_tuple)
         elif table_name == 'Umbrella':
-            return cls(db_name, table_name, umbrella_table_tuple, buffer_max)
+            return cls(db_name, table_name, umbrella_table_tuple)
         else:
             raise Exception("only support Alexa and Umbrella")
 
@@ -91,25 +90,15 @@ class Dao:
     def _escape_key(self, key_str):
         return "'" + key_str + "'"
 
-    def flush(self, lock):
+    def flush(self):
         sql_command = self._generate_insert_table_sql()
-        lock.acquire()
-        print(str(os.getpid()) + " enter")
-        print(len(self._buffer))
-        self._conn.executemany(sql_command, self._buffer)
-        # self._c.executemany(sql_command, self._buffer)
-        self._conn.commit()
-        print(str(os.getpid()) + " leave")
-        lock.release()
+        self._c.executemany(sql_command, self._buffer)
         self._buffer = []
 
-    def insert_data(self, data, lock):
+    def insert_data(self, data):
         self._buffer.append(self.reform(data))
         if len(self._buffer) >= self._buffer_max:
-            self.flush(lock)
-        # self._c.execute(sql_command)
-        # save the changes
-        # self._conn.commit()
+            self.flush()
 
     def close(self):
         self._conn.close()
