@@ -34,7 +34,6 @@ class Downloader:
     def download_file(self, url, cache_dir="data"):
         file_name = os.path.basename(url)
         with open(os.path.join(cache_dir, file_name), "wb") as f:
-            print("Downloading %s" % file_name)
             response = requests.get(url, stream=True)
             content_length = response.headers.get('content-length')
             if content_length is None:  # no content length header
@@ -48,10 +47,12 @@ class Downloader:
                     f.write(data)
                     done = int(50 * finished / content_length)
                     sys.stdout.write(
-                        "\r %d%% [%s%s] %d/%d" % (
-                            float(finished) / float(content_length) * 100, '=' * done, ' ' * (50 - done), finished,
-                            content_length))
+                        "\r Downloading %s: %d%% [%s%s] %d/%d" % (file_name,
+                                                                  float(finished) / float(content_length) * 100,
+                                                                  '=' * done, ' ' * (50 - done), finished,
+                                                                  content_length))
                     sys.stdout.flush()
+        print("Downloading %s ... ok" % file_name)
 
 
 if __name__ == '__main__':

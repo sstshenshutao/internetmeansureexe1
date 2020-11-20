@@ -60,6 +60,8 @@ if __name__ == '__main__':
         names = list(map(lambda x: os.path.join(cache_dir, x), tar.getnames()))
         tar.extractall(cache_dir)
         tar.close()
+        # clean it after untaring
+        os.remove(tar_pathname)
         # read avro and save it in the dao
         jobs = []
         all_counter = multiprocessing.Value('i', 0)
@@ -69,4 +71,6 @@ if __name__ == '__main__':
             p = multiprocessing.Process(target=inside_tar_worker, args=(lock, name))
             jobs.append(p)
             p.start()
+
+        for p in jobs:
             p.join()
