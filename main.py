@@ -15,8 +15,8 @@ def inside_tar_worker(lck, tar_file_name):
         avro_io = avro_reader(fo)
         counter = 0
         for record in avro_io:
-            if record['response_type'] == 'AAAA' or record['response_type'] == 'A' or record[
-                'response_type'] == 'CNAME':
+            if record['response_type'] == 'AAAA' or record['response_type'] == 'A' or \
+                    record['response_type'] == 'CNAME':
                 if counter % buffer_max == 0:
                     if counter != 0:
                         with all_counter.get_lock():
@@ -34,6 +34,8 @@ def inside_tar_worker(lck, tar_file_name):
             "extracting %s: %d...ok " % (tar_file_name, counter))
     with worker_number.get_lock():
         worker_number.value -= 1
+    # clean data file
+    os.remove(tar_file_name)
 
 
 if __name__ == '__main__':
@@ -41,7 +43,7 @@ if __name__ == '__main__':
     cache_dir = "data"  # default:data
     db_name = 'example.db'
     year = 2020
-    month = 2
+    month = 10
     buffer_max = 10000
     db_pathname = os.path.join(cache_dir, db_name)
 
@@ -49,9 +51,9 @@ if __name__ == '__main__':
     downloader = Downloader.from_source(source_name)
     dao = Dao.load_table(db_pathname, source_name, buffer_max=buffer_max)
     # download the file
-    urls = downloader.get_month_files(year, month)[:1]
+    urls = downloader.get_month_files(year, month)
     for current_url in urls:
-        # downloader.download_file(current_url, cache_dir)
+        downloader.download_file(current_url, cache_dir)
         # untar it
         tar_pathname = os.path.join(cache_dir, os.path.basename(current_url))
         tar = tarfile.open(tar_pathname, mode='r')
@@ -67,6 +69,4 @@ if __name__ == '__main__':
             p = multiprocessing.Process(target=inside_tar_worker, args=(lock, name))
             jobs.append(p)
             p.start()
-
-        for p in jobs:
             p.join()
