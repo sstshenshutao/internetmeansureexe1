@@ -94,14 +94,15 @@ class Dao:
     def flush(self, lock):
         sql_command = self._generate_insert_table_sql()
         lock.acquire()
-        print(str(os.getpid()) + " enter")
-        print(len(self._buffer))
         self._conn.executemany(sql_command, self._buffer)
-        # self._c.executemany(sql_command, self._buffer)
-        self._conn.commit()
-        print(str(os.getpid()) + " leave")
-        lock.release()
-        self._buffer = []
+        try:
+            self._conn.commit()
+        except Exception as e:
+            print("except!!!" + str(type(e)))
+        else:
+            self._buffer = []
+        finally:
+            lock.release()
 
     def insert_data(self, data, lock):
         self._buffer.append(self.reform(data))

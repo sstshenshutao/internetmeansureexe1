@@ -9,8 +9,9 @@ import tarfile
 
 
 def inside_tar_worker(lock, tar_file_name):
+    with worker_number.get_lock():
+        worker_number.value += 1
     with open(tar_file_name, 'rb') as fo:
-        dao = Dao.load_table(db_pathname, source_name, buffer_max=buffer_max)
         avro_io = avro_reader(fo)
         counter = 0
         for record in avro_io:
@@ -19,15 +20,18 @@ def inside_tar_worker(lock, tar_file_name):
                     with all_counter.get_lock():
                         all_counter.value += buffer_max
                 sys.stdout.write(
-                    "\r extracting %s: %d..." % (tar_file_name, all_counter.value))
+                    "\r extracting %s: %d... [worker number: %d]" % (
+                        tar_file_name, all_counter.value, worker_number.value))
                 sys.stdout.flush()
             dao.insert_data(record, lock)
             counter += 1
         dao.flush(lock)
         with all_counter.get_lock():
             all_counter.value += (counter % buffer_max)
-        sys.stdout.write(
-            "\r extracting %s: %d...ok" % (tar_file_name, counter))
+        print(
+            "extracting %s: %d...ok " % (tar_file_name, counter))
+    with worker_number.get_lock():
+        worker_number.value -= 1
 
 
 if __name__ == '__main__':
@@ -41,7 +45,7 @@ if __name__ == '__main__':
 
     # init the data
     downloader = Downloader.from_source(source_name)
-
+    dao = Dao.load_table(db_pathname, source_name, buffer_max=buffer_max)
     # download the file
     urls = downloader.get_month_files(year, month)[:1]
     for current_url in urls:
@@ -55,6 +59,7 @@ if __name__ == '__main__':
         # read avro and save it in the dao
         jobs = []
         all_counter = multiprocessing.Value('i', 0)
+        worker_number = multiprocessing.Value('i', 0)
         lock = multiprocessing.Lock()
         for name in names:
             p = multiprocessing.Process(target=inside_tar_worker, args=(lock, name))
