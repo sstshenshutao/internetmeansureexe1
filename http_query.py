@@ -30,8 +30,13 @@ class Downloader:
         # print(filenames)
         return filenames
 
-    # download and re
-    def download_file(self, url, cache_dir="data"):
+    @classmethod
+    def get_file_and_path(cls, url, cache_dir="data"):
+        file_name = os.path.basename(url)
+        return file_name, os.path.join(cache_dir, file_name)
+
+    @classmethod
+    def download_file(cls, url, cache_dir="data"):
         file_name = os.path.basename(url)
         with open(os.path.join(cache_dir, file_name), "wb") as f:
             response = requests.get(url, stream=True)

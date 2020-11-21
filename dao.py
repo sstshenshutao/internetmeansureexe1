@@ -54,7 +54,7 @@ class Dao:
         self.table_name = table_name
         self.table_tuple = table_tuple
         conn = sqlite3.connect(db_name, isolation_level='EXCLUSIVE')
-        self._conn = conn
+        self.conn = conn
         cursor = conn.cursor()
         self._c = cursor
         self._create_table()
@@ -94,15 +94,19 @@ class Dao:
     def flush(self, lock):
         sql_command = self._generate_insert_table_sql()
         lock.acquire()
-        self._conn.executemany(sql_command, self._buffer)
+        self.conn.executemany(sql_command, self._buffer)
         try:
-            self._conn.commit()
+            self.conn.commit()
         except Exception as e:
             print("except!!!" + str(type(e)))
         else:
             self._buffer = []
         finally:
             lock.release()
+
+    def insert_all_records(self, records, lock):
+        self._buffer = [self.reform(r) for r in records]
+        self.flush(lock)
 
     def insert_data(self, data, lock):
         self._buffer.append(self.reform(data))
@@ -112,8 +116,13 @@ class Dao:
         # save the changes
         # self._conn.commit()
 
+    def create_column(self, column_name, data_type):
+        sql_command = "alter table %s add '%s' %s;" % (self.table_name, column_name, data_type)
+        self._c.execute(sql_command)
+        self.conn.commit()
+
     def close(self):
-        self._conn.close()
+        self.conn.close()
 
     def _generate_insert_table_sql(self):
         sql_command = "INSERT INTO " + self.table_name + " VALUES ("
@@ -155,4 +164,4 @@ class Dao:
             return "'" + str(value) + "'"
 
     def read_data(self, sql_command):
-        return pd.read_sql(sql_command, self._conn)
+        return pd.read_sql(sql_command, self.conn)
