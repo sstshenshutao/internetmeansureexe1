@@ -1,6 +1,8 @@
 import multiprocessing
 import os
 import sys
+import argparse
+import string
 
 from dao import Dao
 from http_query import Downloader
@@ -8,7 +10,8 @@ from fastavro import reader as avro_reader
 import tarfile
 
 
-def inside_tar_worker(lck, tar_file_name):
+# the worker for the avro file, each worker works for a single avro file that is extracted from the tar
+def avro_worker(lck, tar_file_name):
     with worker_number.get_lock():
         worker_number.value += 1
     with open(tar_file_name, 'rb') as fo:
@@ -31,20 +34,38 @@ def inside_tar_worker(lck, tar_file_name):
         with all_counter.get_lock():
             all_counter.value += (counter % buffer_max)
         print(
-            "extracting %s: %d...ok " % (tar_file_name, counter))
+            "\r extracting %s: %d...ok " % (tar_file_name, counter))
     with worker_number.get_lock():
         worker_number.value -= 1
     # clean data file
     os.remove(tar_file_name)
 
 
+def init_argparse():
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser.add_argument('source', metavar='source', type=str,
+                        help='the source of the data, can be Alexa or Umbrella')
+    parser.add_argument('year', metavar='year', type=int,
+                        help='the year to query, example: 10')
+    parser.add_argument('month', metavar='month', type=int,
+                        help='the month to query, example: 2')
+    parser.add_argument('--db', metavar='db_name', type=str, nargs='?', default='example.db',
+                        help='the db name (name only), example: "example.db"')
+    parser.add_argument('--cache', metavar='cache_dir', type=str, nargs='?', default='data',
+                        help='the cache folder, example: data')
+    parser.add_argument('--buffer', metavar='buffer_max', type=int, nargs='?', default=10000,
+                        help='the max buffer size: the size of avro entries that are buffered in the memory')
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
-    source_name = 'Alexa'
-    cache_dir = "data"  # default:data
-    db_name = 'example.db'
-    year = 2020
-    month = 10
-    buffer_max = 10000
+    args = init_argparse()
+    source_name = string.capwords(args.source)
+    cache_dir = args.cache
+    db_name = args.db
+    year = args.year
+    month = args.month
+    buffer_max = args.buffer
     db_pathname = os.path.join(cache_dir, db_name)
 
     # init the data
@@ -68,7 +89,7 @@ if __name__ == '__main__':
         worker_number = multiprocessing.Value('i', 0)
         lock = multiprocessing.Lock()
         for name in names:
-            p = multiprocessing.Process(target=inside_tar_worker, args=(lock, name))
+            p = multiprocessing.Process(target=avro_worker, args=(lock, name))
             jobs.append(p)
             p.start()
 

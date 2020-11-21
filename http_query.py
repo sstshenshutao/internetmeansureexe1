@@ -52,7 +52,7 @@ class Downloader:
                                                                   '=' * done, ' ' * (50 - done), finished,
                                                                   content_length))
                     sys.stdout.flush()
-        print("Downloading %s ... ok" % file_name)
+        print("\r Downloading %s ... ok" % file_name)
 
 
 if __name__ == '__main__':
