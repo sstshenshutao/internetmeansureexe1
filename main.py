@@ -18,8 +18,9 @@ def avro_worker(lck, tar_file_name):
         avro_io = avro_reader(fo)
         counter = 0
         for record in avro_io:
-            if record['response_type'] == 'AAAA' or record['response_type'] == 'A' or \
-                    record['response_type'] == 'CNAME':
+            if str(record['query_name']).startswith('www') and (
+                    record['response_type'] == 'AAAA' or record['response_type'] == 'A' or
+                    record['response_type'] == 'CNAME'):
                 if counter % buffer_max == 0:
                     if counter != 0:
                         with all_counter.get_lock():
