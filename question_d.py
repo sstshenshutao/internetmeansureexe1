@@ -104,11 +104,11 @@ class Asn:
 
     def prepare_databases(self):
         # download
-        # todo: Downloader.download_file(self.link, self.cache_dir)
+        Downloader.download_file(self.link, self.cache_dir)
         # convert
         file, path = Downloader.get_file_and_path(self.link, self.cache_dir)
         asn_data_path = os.path.join('data', asn_filename)
-        # todo: convert(src=path, dist=asn_data_path)
+        convert(src=path, dist=asn_data_path)
         # load the asn dat file
         return pyasn.pyasn(asn_data_path)
 
