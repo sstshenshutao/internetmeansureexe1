@@ -1,5 +1,6 @@
 import os
 import argparse
+import string
 import sys
 
 import pandas as pd
@@ -32,7 +33,7 @@ class Asn:
         self.link = self.generate_asm_ix_link()
         self.cache_dir = cache_dir
         self.db_name = db_name
-        self.source_name = source_name
+        self.source_name = string.capwords(source_name)
         self.chunksize = chunksize
         self.dao = Dao.load_table(os.path.join(cache_dir, db_name), source_name)
         self._asndb = self.prepare_databases()
@@ -80,27 +81,45 @@ class Asn:
                 df.loc[index, 'ASes'] = ases
                 ases_array.append(ases)
             new_column = pd.DataFrame({"ASes": ases_array})
-            new_column.to_sql('tmp', self.dao.conn, if_exists='append', index=False)
+            new_column.to_sql('tmp', self.dao.conn, if_exists='append', index_label='id')
             counter += self.chunksize
             sys.stdout.write(
                 "\r finished %d... " % (
                     counter))
         self.dao.create_column("ASes", "Integer")
         # merge column
-        qry = 'update %s set ASes = (select ASes from tmp where tmp.ROWID = %s.ROWID) ' \
+        qry = 'update %s set ASes = (select ASes from tmp where tmp.id = %s.id) ' \
               % (self.source_name, self.source_name)
         self.dao.conn.execute(qry)
         self.dao.conn.commit()
         self.dao.conn.execute('DROP TABLE IF EXISTS tmp')
 
 
+def init_argparse():
+    parser = argparse.ArgumentParser(description='question_d')
+    parser.add_argument('source', metavar='source', type=str,
+                        help='the source of the data, can be Alexa or Umbrella')
+    parser.add_argument('year', metavar='year', type=int,
+                        help='the year to query, example: 10')
+    parser.add_argument('month', metavar='month', type=int,
+                        help='the month to query, example: 2')
+    parser.add_argument('--db', metavar='db_name', type=str, nargs='?', default='example.db',
+                        help='the db name (name only), example: "example.db"')
+    parser.add_argument('--cache', metavar='cache_dir', type=str, nargs='?', default='data',
+                        help='the cache folder, example: data')
+    parser.add_argument('--chunksize', metavar='chunksize', type=int, nargs='?', default=10000,
+                        help='the max chunksize to read and modify from sql table')
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
-    cache_dir = "data"
-    year = 2020
-    month = 10
-    chunksize = 10000
-    db = 'example.db'
-    source = 'Umbrella'
-    asn = Asn(db, source)
+    args = init_argparse()
+    cache_dir = args.cache
+    year = args.year
+    month = args.month
+    chunksize = args.chunksize
+    db = args.db
+    source = string.capwords(args.source)
+    asn = Asn(db, source, cache_dir=cache_dir, year=year, month=month, chunksize=chunksize)
     # too slow
     asn.flush_ases()

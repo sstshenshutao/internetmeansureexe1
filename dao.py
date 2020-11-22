@@ -59,7 +59,7 @@ class Dao:
         self._c = cursor
         self._create_table()
         # buffered size of insertion
-        self._buffer_max = buffer_max
+        self.buffer_max = buffer_max
         self._buffer = []
 
     def _create_table(self):
@@ -67,7 +67,7 @@ class Dao:
         self._c.execute(sql_command)
 
     @classmethod
-    def load_table(cls, db_name, table_name, buffer_max=100):
+    def load_table(cls, db_name, table_name, buffer_max=0):
         if table_name == 'Alexa':
             return cls(db_name, table_name, alexa_table_tuple, buffer_max)
         elif table_name == 'Umbrella':
@@ -110,7 +110,7 @@ class Dao:
 
     def insert_data(self, data, lock):
         self._buffer.append(self.reform(data))
-        if len(self._buffer) >= self._buffer_max:
+        if len(self._buffer) >= self.buffer_max:
             self.flush(lock)
         # self._c.execute(sql_command)
         # save the changes

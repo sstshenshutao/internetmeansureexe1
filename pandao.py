@@ -15,7 +15,7 @@ class Dao:
         self.conn = conn
         cursor = conn.cursor()
         self._c = cursor
-        self._buffer_max = buffer_max
+        self.buffer_max = buffer_max
         self._buffer = []
 
     def insert_all_records(self, records, lock):
@@ -23,12 +23,12 @@ class Dao:
         lock.acquire()
         try:
             pd.DataFrame.to_sql(df, name=self.table_name, con=self.conn,
-                                if_exists='append', index=False)
+                                if_exists='append', index_label='id')
         finally:
             lock.release()
 
     @classmethod
-    def load_table(cls, db_name, table_name, buffer_max=10000):
+    def load_table(cls, db_name, table_name, buffer_max=0):
         if table_name == 'Alexa' or table_name == 'Umbrella':
             return cls(db_name, table_name, buffer_max)
         else:
@@ -40,7 +40,7 @@ class Dao:
 
     def insert_data(self, data, lock):
         self._buffer.append(data)
-        if len(self._buffer) >= self._buffer_max:
+        if len(self._buffer) >= self.buffer_max:
             self.flush(lock)
 
     def read_data(self, sql_command, chunksize=0):

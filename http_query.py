@@ -30,6 +30,9 @@ class Downloader:
         # print(filenames)
         return filenames
 
+    def get_day_file(self, year, month, day):
+        return datetime.date(year, month, day).strftime(self._url_pattern)
+
     @classmethod
     def get_file_and_path(cls, url, cache_dir="data"):
         file_name = os.path.basename(url)
