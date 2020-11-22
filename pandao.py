@@ -24,6 +24,10 @@ class Dao:
         try:
             pd.DataFrame.to_sql(df, name=self.table_name, con=self.conn,
                                 if_exists='append', index_label='id')
+        except Exception as e:
+            print("except!!!" + str(type(e)))
+        else:
+            self._buffer = []
         finally:
             lock.release()
 
@@ -36,7 +40,6 @@ class Dao:
 
     def flush(self, lock):
         self.insert_all_records(self._buffer, lock)
-        self._buffer = []
 
     def insert_data(self, data, lock):
         self._buffer.append(data)

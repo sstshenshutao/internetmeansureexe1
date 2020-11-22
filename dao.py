@@ -94,8 +94,8 @@ class Dao:
     def flush(self, lock):
         sql_command = self._generate_insert_table_sql()
         lock.acquire()
-        self.conn.executemany(sql_command, self._buffer)
         try:
+            self.conn.executemany(sql_command, self._buffer)
             self.conn.commit()
         except Exception as e:
             print("except!!!" + str(type(e)))
