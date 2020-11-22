@@ -23,7 +23,7 @@ class Dao:
         lock.acquire()
         try:
             pd.DataFrame.to_sql(df, name=self.table_name, con=self.conn,
-                                if_exists='append', index_label='id')
+                                if_exists='append', index=False)
         except Exception as e:
             print("except!!!" + str(type(e)))
         else:

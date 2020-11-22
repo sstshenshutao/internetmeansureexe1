@@ -4,74 +4,49 @@ import argparse
 import string
 import sys
 import time
-
+import re
 import pandas as pd
 from pandao import Dao
 from http_query import Downloader
 import datetime
-import pyasn
-from pyasn import mrtx
-
-asm_ix_pattern = "http://archive.routeviews.org/route-views.amsix/bgpdata/%Y.%m/RIBS/rib.%Y%m15.1200.bz2"
-asn_filename = 'IPASN.DAT'
 
 
-# converting MRT/RIB archives to IPASN databases.
-def convert(src, dist):
-    print('WAIT: converting MRT/RIB archives to IPASN databases.')
-    prefixes = mrtx.parse_mrt_file(src, print_progress=True,
-                                   skip_record_on_error=True)
-    mrtx.dump_prefixes_to_file(prefixes, dist, src)
-    v6 = sum(1 for x in prefixes if ':' in x)
-    v4 = len(prefixes) - v6
-    print('IPASN database saved (%d IPV4 + %d IPV6 prefixes)' % (v4, v6))
-
-
-# the asn multiprocessing part
-def asn_worker(lock, asn_obj, offset, read_size, flag):
-    dao = asn_obj.dao
+# the host multiprocessing part
+def host_worker(lock, host_obj, offset, read_size, flag):
+    dao = host_obj.dao
     counter = 0
-    additional_time = (0 if read_size % asn_obj.chunksize == 0 else 1)
-    times = read_size // asn_obj.chunksize + additional_time
-    last_round_size = read_size - asn_obj.chunksize * (times - additional_time)
+    additional_time = (0 if read_size % host_obj.chunksize == 0 else 1)
+    times = read_size // host_obj.chunksize + additional_time
+    last_round_size = read_size - host_obj.chunksize * (times - additional_time)
     # second partition
     print("process %d start %d round loop, partition offset: %d" % (os.getpid(), times, offset))
     for i in range(times):
-        piece_offset = offset + i * asn_obj.chunksize
-        limit = asn_obj.chunksize
+        piece_offset = offset + i * host_obj.chunksize
+        limit = host_obj.chunksize
         if i == times - 1:
             limit = last_round_size
         sql = 'SELECT t.* FROM %s t LIMIT %d OFFSET %d' % \
-              (asn_obj.source_name, limit, piece_offset)
+              (host_obj.source_name, limit, piece_offset)
         if flag == 0 and i == 0:
             sql = 'SELECT t.* FROM %s t LIMIT %d' % \
-                  (asn_obj.source_name, limit)
+                  (host_obj.source_name, limit)
         lock.acquire()
         df = dao.read_data(sql)
         lock.release()
         update_array = []
         for index, row in df.iterrows():
-            ip4_addr = row['ip4_address']
-            ip6_addr = row['ip6_address']
-            if ip4_addr is not None:
-                lookup_result = asn_obj.lookup(ip4_addr)
-                if lookup_result is not None:
-                    ases = lookup_result[0]
-                else:
-                    ases = None
-            elif ip6_addr is not None:
-                lookup_result = asn_obj.lookup(ip6_addr)
-                if lookup_result is not None:
-                    ases = lookup_result[0]
-                else:
-                    ases = None
+            response_type = row['response_type']
+            if response_type == 'CNAME':
+                hostname = host_obj.identify_cname(row['response_name'], row['query_name'])
             else:
-                ases = None
-            update_array.append([ases, piece_offset + index + 1])
+                hostname = host_obj.identify_ases(row['ASes'])
+            if hostname is None:
+                hostname = "-1"
+            update_array.append([hostname, piece_offset + index + 1])
         lock.acquire()
         try:
             # directly use update to update the sql table
-            update_sql = "UPDATE %s SET ASes = ? WHERE ROWID = ?" % asn_obj.source_name
+            update_sql = "UPDATE %s SET host = ? WHERE ROWID = ?" % host_obj.source_name
             dao.conn.executemany(update_sql, update_array)
             dao.conn.commit()
         finally:
@@ -85,40 +60,53 @@ def asn_worker(lock, asn_obj, offset, read_size, flag):
             os.getpid(), counter))
 
 
-class Asn:
-
-    def __init__(self, db_name, source_name, cache_dir="data", year=2020, month=10, chunksize=1000, process_number=50):
-        self.year = year
-        self.month = month
-        self.link = self.generate_asm_ix_link()
+class Host:
+    def __init__(self, db_name, source_name, cache_dir="data", chunksize=1000, process_number=50):
         self.cache_dir = cache_dir
         self.db_name = db_name
         self.source_name = string.capwords(source_name)
         self.chunksize = chunksize
         self.process_number = process_number
         self.dao = Dao(os.path.join(cache_dir, db_name), self.source_name, 0)
-        self._asndb = self.prepare_databases()
+        self._init_re_rules()
+        self._init_asns_rules()
 
-    def generate_asm_ix_link(self):
-        return datetime.date(self.year, self.month, 15).strftime(asm_ix_pattern)
+    def _init_re_rules(self):
+        with open(os.path.join('csv', 'regexes.csv')) as f:
+            content = f.readlines()
+        re_list = []
+        for c in content:
+            exec("re_list.append(" + c[:len(c) - 1] + ')')
+        self.re_list = re_list
 
-    def prepare_databases(self):
-        # download
-        Downloader.download_file(self.link, self.cache_dir)
-        # convert
-        file, path = Downloader.get_file_and_path(self.link, self.cache_dir)
-        asn_data_path = os.path.join('data', asn_filename)
-        convert(src=path, dist=asn_data_path)
-        # load the asn dat file
-        return pyasn.pyasn(asn_data_path)
+    def _init_asns_rules(self):
+        df = pd.read_csv(os.path.join('csv', 'asns.csv'), sep=";")
+        self.asns = df[['provider', 'asn']].drop_duplicates()
 
-    def lookup(self, ip_address):
-        return self._asndb.lookup(ip_address)
+    def identify_ases(self, ases):
+        search_df = self.asns.loc[self.asns['asn'] == ases]
+        if search_df.empty:
+            return None
+        else:
+            return search_df['provider'].values[0]
 
-    def flush_ases(self):
+    def identify_cname(self, response_name, query_name):
+        if response_name != query_name:
+            for i in range(len(self.re_list)):
+                if self.re_list[i][1].match(response_name) is not None:
+                    return self.re_list[i][0]
+                if self.re_list[i][1].match(query_name) is not None:
+                    return self.re_list[i][0]
+        else:
+            for i in range(len(self.re_list)):
+                if self.re_list[i][1].match(response_name) is not None:
+                    return self.re_list[i][0]
+        return None
+
+    def flush_host(self):
         process_number = self.process_number
         try:
-            self.dao.create_column("ASes", "INTEGER")
+            self.dao.create_column("host", "TEXT")
         except Exception as e:
             print("create fail, maybe exist", str(type(e)))
         # get the number of rows in the table
@@ -139,7 +127,7 @@ class Asn:
             if i == process_number - 1:
                 final_read_size = avg_read_number + all_count - avg_read_number * process_number
             # start multi processes
-            p = multiprocessing.Process(target=asn_worker,
+            p = multiprocessing.Process(target=host_worker,
                                         args=(lock, self, offset, final_read_size, 0 if i == 0 else 1))
             jobs.append(p)
             p.start()
@@ -152,13 +140,9 @@ class Asn:
 
 
 def init_argparse():
-    parser = argparse.ArgumentParser(description='question_d')
+    parser = argparse.ArgumentParser(description='question_e')
     parser.add_argument('source', metavar='source', type=str,
                         help='the source of the data, can be Alexa or Umbrella')
-    parser.add_argument('year', metavar='year', type=int,
-                        help='the year to query, example: 10')
-    parser.add_argument('month', metavar='month', type=int,
-                        help='the month to query, example: 2')
     parser.add_argument('--db', metavar='db_name', type=str, nargs='?', default='example.db',
                         help='the db name (name only), example: "example.db"')
     parser.add_argument('--cache', metavar='cache_dir', type=str, nargs='?', default='data',
@@ -173,12 +157,10 @@ def init_argparse():
 if __name__ == '__main__':
     args = init_argparse()
     arg_cache_dir = args.cache
-    arg_year = args.year
-    arg_month = args.month
     arg_process_number = args.process_number
     arg_chunksize = args.chunksize
     arg_db = args.db
     arg_source = string.capwords(args.source)
-    asn = Asn(arg_db, arg_source, cache_dir=arg_cache_dir, year=arg_year, month=arg_month, chunksize=arg_chunksize,
-              process_number=arg_process_number)
-    asn.flush_ases()
+    h = Host(arg_db, arg_source, cache_dir=arg_cache_dir, chunksize=arg_chunksize,
+             process_number=arg_process_number)
+    h.flush_host()
